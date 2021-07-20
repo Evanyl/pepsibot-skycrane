@@ -1,6 +1,6 @@
-# pPepsibot Skycrane
+# Pepsibot Skycrane
 
-A robot built for the ENPH 253 competition 2021.
+A robot built for the ENPH 253 competition 2021. This is the code for the skycrane mechanism.
 
 ## Technologies
 
