@@ -2,11 +2,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Servo.h>
 
-#define CLAW_PIN PB1
 #define WEIGHT_ADJUSTOR_PIN PA_3
-
-#define SERVO_PIN PA_4
-
 #define BUTTON PA5
 
 #define PULLEY_MOTOR_PIN PA_8
@@ -16,7 +12,6 @@
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-Servo claw;
 
 #define ECHO PA5
 #define TRIGG PA4
@@ -27,11 +22,6 @@ void printToDisplay(String text)
   display.setCursor(0, 0);
   display.println(text);
   display.display();
-}
-
-void setupClaw()
-{
-  claw.attach(CLAW_PIN);
 }
 
 void setupDisplay()
@@ -62,7 +52,7 @@ void adjustPulleyMotor(int value)
 }
 
 void changeState() {
-  printToDisplay("AEFWF");
+  printToDisplay("Button pressed");
   delay(3000);
 }
 
@@ -91,7 +81,6 @@ void setup()
 {
   setupAdjustor();
   setupPulley();
-  // setupClaw();
   // make sure setupDisplay is last because for some reason you gotta call it after all pinModes are done 
   setupDisplay();
 
