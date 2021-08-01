@@ -1,31 +1,40 @@
 #include <Wire.h>
 #include <Adafruit_SSD1306.h>
 #include <Servo.h>
-
-#define WEIGHT_ADJUSTOR_PIN PA_3
-#define BUTTON PA5
-
-#define PULLEY_MOTOR_PIN PA_8
-#define PULLEY_MOTOR_FREQ 100
+#include <Ultrasonic.h>
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
+#define WEIGHT_ADJUSTOR_PIN PA_3
+#define BUTTON PA0
+
+#define PULLEY_MOTOR_PIN PA_8
+#define PULLEY_MOTOR_FREQ 100
+
 #define ECHO PA5
 #define TRIGG PA4
 
-void printToDisplay(String text)
+Ultrasonic sonar(TRIGG, ECHO);
+
+enum STATE {
+  WAITING,
+  DESCENT,
+  SLOW
+};
+
+STATE state = STATE::WAITING;
+int adjustorValue;
+int distance;
+
+void setupPulley()
 {
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println(text);
-  display.display();
+  pinMode(PULLEY_MOTOR_PIN, OUTPUT);
 }
 
-void setupDisplay()
-{
+void setupDisplay() {
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -33,9 +42,11 @@ void setupDisplay()
   display.display();
 }
 
-void setupPulley()
-{
-  pinMode(PULLEY_MOTOR_PIN, OUTPUT);
+void print(String text) {
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println(text);
+  display.display();
 }
 
 void setupAdjustor()
@@ -52,45 +63,51 @@ void adjustPulleyMotor(int value)
 }
 
 void changeState() {
-  printToDisplay("Button pressed");
-  delay(3000);
+  switch (state) {
+    case STATE::WAITING:
+      adjustorValue = adjustorValue / 4;
+      adjustPulleyMotor(adjustorValue);
+      state = STATE::DESCENT;
+      break;
+    case STATE::DESCENT:
+      adjustorValue = adjustorValue * 4;
+      if (adjustorValue > 1023) adjustorValue = 1023;
+      adjustPulleyMotor(adjustorValue);
+      state = STATE::SLOW;
+      break;
+  }
+  
+  delay(200);
 }
 
-
-void sonarSetup() {
-  pinMode(TRIGG, OUTPUT);
-  pinMode(ECHO, INPUT);
-}
-
-long getSonarDistanceInCm() {
-  long duration, inches, cm;
-
-  digitalWrite(TRIGG, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIGG, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIGG, LOW);
-  duration = pulseIn(ECHO, HIGH);
-  cm = duration / 29 / 2;
-
-  return cm;
-}
-
-// main
 void setup()
 {
   setupAdjustor();
   setupPulley();
+  pinMode(BUTTON, INPUT_PULLDOWN);
   // make sure setupDisplay is last because for some reason you gotta call it after all pinModes are done 
   setupDisplay();
 
-  // attachInterrupt(digitalPinToInterrupt(BUTTON), changeState, HIGH);
+  attachInterrupt(digitalPinToInterrupt(BUTTON), changeState, RISING);
 }
 
 void loop()
 {
-  int adjustorValue = analogRead(WEIGHT_ADJUSTOR_PIN);
-  printToDisplay("Adjustor: " + String(adjustorValue));
-  printToDisplay("Sonar: " + String(getSonarDistanceInCm()) + " cm");
-  adjustPulleyMotor(adjustorValue);
+  switch(state) {
+    case STATE::WAITING:
+      adjustorValue = analogRead(WEIGHT_ADJUSTOR_PIN);
+      distance = sonar.read();
+      print(
+            "Adjustor: " + String(adjustorValue) + 
+            "\nSonar: " + String(distance) + " cm"
+           );
+      adjustPulleyMotor(adjustorValue);
+      break;
+    case STATE::DESCENT:
+      print("New Adjustor: " + String(adjustorValue));
+      break;
+    case STATE::SLOW:
+      print("WE out here: " + String(adjustorValue));
+      break;
+  }
 }
