@@ -8,11 +8,9 @@
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-#define WEIGHT_ADJUSTOR_PIN PA_3
+#define SERVO_PIN PA3
+Servo servo;
 #define BUTTON PA0
-
-#define PULLEY_MOTOR_PIN PA_8
-#define PULLEY_MOTOR_FREQ 100
 
 #define ECHO PA5
 #define TRIGG PA4
@@ -21,18 +19,16 @@ Ultrasonic sonar(TRIGG, ECHO);
 
 enum STATE {
   WAITING,
+  ASCENT,
+  STANDBY,
   DESCENT,
-  SLOW
+  SLOW,
+  DONE
 };
 
 STATE state = STATE::WAITING;
 int adjustorValue;
 int distance;
-
-void setupPulley()
-{
-  pinMode(PULLEY_MOTOR_PIN, OUTPUT);
-}
 
 void setupDisplay() {
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
@@ -49,65 +45,112 @@ void print(String text) {
   display.display();
 }
 
-void setupAdjustor()
-{
-  pinMode(WEIGHT_ADJUSTOR_PIN, INPUT_ANALOG);
+void servoSetup() {
+  servo.attach(SERVO_PIN);
 }
 
-/** Adjusts the torque applied by the motor
- * @param value is an integer from 0 - 1023
- */
-void adjustPulleyMotor(int value)
-{
-  pwm_start(PULLEY_MOTOR_PIN, PULLEY_MOTOR_FREQ, value * 4095 / 1023, RESOLUTION_12B_COMPARE_FORMAT);
-}
+int lastInterruptMillis = 0;
 
 void changeState() {
-  switch (state) {
-    case STATE::WAITING:
-      adjustorValue = adjustorValue / 4;
-      adjustPulleyMotor(adjustorValue);
-      state = STATE::DESCENT;
-      break;
-    case STATE::DESCENT:
-      adjustorValue = adjustorValue * 4;
-      if (adjustorValue > 1023) adjustorValue = 1023;
-      adjustPulleyMotor(adjustorValue);
-      state = STATE::SLOW;
-      break;
+  if (millis() - lastInterruptMillis > 200) {
+    switch (state) {
+      case STATE::WAITING:
+        state = STATE::ASCENT;
+        break;
+      case STATE::ASCENT:
+        state = STATE::STANDBY;
+        break;
+      case STATE::STANDBY:
+        state = STATE::DESCENT;
+        break;
+      case STATE::DESCENT:
+        state = STATE::SLOW;
+        break;
+      case STATE::SLOW:
+        state = STATE::DONE;
+        break;
+      case STATE::DONE:
+        state = STATE::WAITING;
+        break;
+    }
+    lastInterruptMillis = millis();
   }
-  
-  delay(200);
 }
 
 void setup()
 {
-  setupAdjustor();
-  setupPulley();
   pinMode(BUTTON, INPUT_PULLDOWN);
+  servoSetup();
+
   // make sure setupDisplay is last because for some reason you gotta call it after all pinModes are done 
   setupDisplay();
 
   attachInterrupt(digitalPinToInterrupt(BUTTON), changeState, RISING);
 }
 
+int i = 0;
+
+bool enteredDescent = false;
+int descentTime;
 void loop()
 {
   switch(state) {
     case STATE::WAITING:
-      adjustorValue = analogRead(WEIGHT_ADJUSTOR_PIN);
-      distance = sonar.read();
       print(
-            "Adjustor: " + String(adjustorValue) + 
-            "\nSonar: " + String(distance) + " cm"
+            "Waiting"
            );
-      adjustPulleyMotor(adjustorValue);
+      break;
+    case STATE::ASCENT:
+      print(
+            "ASCENDING"
+           );
+      servo.write(0);
+      break;
+    case STATE::STANDBY:
+      print(
+            "STANDBY"
+           );
+      servo.write(80);
       break;
     case STATE::DESCENT:
-      print("New Adjustor: " + String(adjustorValue));
+      if (!enteredDescent) {
+        descentTime = millis();
+        enteredDescent = true;
+      }
+      if (millis() - descentTime > 2000)  {
+        enteredDescent = false;
+        changeState();
+      }
+      servo.write(180);
+      print(
+            "\n DESCENDING"
+           );
       break;
     case STATE::SLOW:
-      print("WE out here: " + String(adjustorValue));
+      if (i < 7) {
+          if (millis() - descentTime < 100) {
+          print("Slow");
+          servo.write(90);
+        } else if (millis() - descentTime < 200){
+          print("GO");
+          servo.write(180);
+        } else {
+          descentTime = millis();
+          i++;
+        }
+      } else {
+        if (millis() - descentTime < 2500) {
+          servo.write(180);
+        } else {
+          servo.write(90);
+        }
+      }
+      
+      break;
+    case STATE::DONE:
+      print(
+        "DONE"
+      );
       break;
   }
 }
